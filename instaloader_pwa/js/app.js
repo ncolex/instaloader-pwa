@@ -1,11 +1,34 @@
 // instaloader_pwa/js/app.js
 class InstaLoaderPWA {
     constructor() {
-        this.apiBaseUrl = ''; // API endpoint is relative
+        this.apiBaseUrl = this.resolveApiBaseUrl();
         this.jobId = null;
         this.pollInterval = null;
         this.initializeElements();
         this.bindEvents();
+    }
+
+    resolveApiBaseUrl() {
+        // Allow overriding via localStorage for advanced setups
+        try {
+            const storedUrl = localStorage.getItem('instaloaderApiBaseUrl');
+            if (storedUrl) {
+                return storedUrl.replace(/\/$/, '');
+            }
+        } catch (error) {
+            console.warn('Unable to access localStorage for API configuration.', error);
+        }
+
+        const { protocol, hostname, port } = window.location;
+
+        // When running the static server locally (e.g. port 8080), default to FastAPI on 8000
+        const isLocalhost = ['localhost', '127.0.0.1'].includes(hostname);
+        if (isLocalhost && port && port !== '8000') {
+            return `${protocol}//${hostname}:8000`;
+        }
+
+        // Default to same-origin requests (useful for deployments where routing is configured)
+        return '';
     }
 
     initializeElements() {
