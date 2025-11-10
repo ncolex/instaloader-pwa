@@ -2,6 +2,8 @@
 class InstaLoaderPWA {
     constructor() {
         this.apiBaseUrl = ''; // API endpoint is relative
+        this.jobId = null;
+        this.pollInterval = null;
         this.initializeElements();
         this.bindEvents();
     }
@@ -18,6 +20,21 @@ class InstaLoaderPWA {
         this.resultsContent = document.getElementById('resultsContent');
         this.profileInfo = document.getElementById('profileInfo');
         this.profileContent = document.getElementById('profileContent');
+        this.previewSection = document.getElementById('previewSection');
+        this.previewContent = document.getElementById('previewContent');
+        
+        // Create and add cancel button
+        this.cancelButton = document.createElement('button');
+        this.cancelButton.id = 'cancelDownloadBtn';
+        this.cancelButton.textContent = 'Cancel';
+        this.cancelButton.className = 'btn';
+        this.cancelButton.style.display = 'none';
+        this.cancelButton.style.marginLeft = '10px';
+        this.cancelButton.addEventListener('click', () => this.cancelDownload());
+        
+        // Add the cancel button next to the download buttons
+        const buttonGroup = document.querySelector('.button-group');
+        buttonGroup.appendChild(this.cancelButton);
     }
 
     bindEvents() {
@@ -32,6 +49,11 @@ class InstaLoaderPWA {
             } else {
                 this.profileInfo.style.display = 'none';
             }
+            
+            // Clear preview when input changes
+            if (!value) {
+                this.previewSection.style.display = 'none';
+            }
         });
     }
 
@@ -41,6 +63,9 @@ class InstaLoaderPWA {
             alert('Please enter a username or URL');
             return;
         }
+
+        // Show download preview
+        await this.showDownloadPreview(target, downloadType);
 
         this.setButtonsDisabled(true);
         this.statusSection.style.display = 'block';
@@ -58,7 +83,8 @@ class InstaLoaderPWA {
             if (!response.ok) throw new Error(`API error: ${response.status}`);
 
             const data = await response.json();
-            await this.pollForStatus(data.job_id);
+            this.jobId = data.job_id; // Store job ID for potential cancellation
+            await this.pollForStatus(this.jobId);
         } catch (error) {
             this.updateStatus(`Error: ${error.message}`, 'error');
             this.setButtonsDisabled(false);
@@ -69,11 +95,13 @@ class InstaLoaderPWA {
         const maxAttempts = 120; // Increased for longer downloads
         let attempts = 0;
 
-        const interval = setInterval(async () => {
+        this.pollInterval = setInterval(async () => {
             if (attempts >= maxAttempts) {
-                clearInterval(interval);
+                clearInterval(this.pollInterval);
+                this.pollInterval = null;
                 this.updateStatus('Download timed out', 'error');
                 this.setButtonsDisabled(false);
+                this.jobId = null;
                 return;
             }
 
@@ -88,16 +116,22 @@ class InstaLoaderPWA {
                 this.updateProgress((attempts / maxAttempts) * 50); // Poll status takes 50% of progress
 
                 if (statusData.status === 'completed') {
-                    clearInterval(interval);
+                    clearInterval(this.pollInterval);
+                    this.pollInterval = null;
+                    this.jobId = null;
                     await this.handleDownloadComplete(statusData.result);
                     this.setButtonsDisabled(false);
                 } else if (statusData.status === 'failed') {
-                    clearInterval(interval);
+                    clearInterval(this.pollInterval);
+                    this.pollInterval = null;
+                    this.jobId = null;
                     this.updateStatus(`Download failed: ${statusData.result?.error || 'Unknown error'}`, 'error');
                     this.setButtonsDisabled(false);
                 }
             } catch (error) {
-                clearInterval(interval);
+                clearInterval(this.pollInterval);
+                this.pollInterval = null;
+                this.jobId = null;
                 this.updateStatus(`Error checking status: ${error.message}`, 'error');
                 this.setButtonsDisabled(false);
             }
@@ -118,6 +152,20 @@ class InstaLoaderPWA {
         this.downloadProfileBtn.disabled = disabled;
         this.downloadPostBtn.disabled = disabled;
         this.autoDownloadBtn.disabled = disabled;
+        
+        // Show/hide cancel button based on whether download is active
+        this.cancelButton.style.display = disabled ? 'inline-block' : 'none';
+    }
+    
+    cancelDownload() {
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+        }
+        
+        this.updateStatus('Download cancelled by user', 'info');
+        this.setButtonsDisabled(false);
+        this.jobId = null;
     }
 
     async handleDownloadComplete(result) {
@@ -200,6 +248,57 @@ class InstaLoaderPWA {
             this.profileInfo.style.display = 'block';
         } catch (error) {
             console.error('Profile info fetch error:', error);
+        }
+    }
+
+    async showDownloadPreview(target, downloadType) {
+        try {
+            // Show a preview of what will be downloaded
+            const isProfile = downloadType === 'profile' || 
+                             (downloadType === 'auto' && !target.includes('/p/') && !target.includes('/reel/'));
+            
+            if (isProfile) {
+                // If it's a profile, get profile info to show as preview
+                const username = target.startsWith('http') ? 
+                    target.split('/').filter(part => part && part !== 'www.instagram.com')[0] : 
+                    target;
+                
+                const response = await fetch(`${this.apiBaseUrl}/api/profile-info/${username}`, { cache: 'no-cache' });
+                if (!response.ok) {
+                    if (response.status !== 404) console.error(`Profile info error: ${response.status}`);
+                    this.previewContent.innerHTML = `<p>Preview not available. Could be a private account or invalid username.</p>`;
+                    this.previewSection.style.display = 'block';
+                    return;
+                }
+                
+                const profileData = await response.json();
+                this.previewContent.innerHTML = `
+                    <div class="preview-content">
+                        <ul>
+                            <li><strong>Type:</strong> Profile (${profileData.posts} posts)</li>
+                            <li><strong>Username:</strong> ${profileData.username}</li>
+                            <li><strong>Full Name:</strong> ${profileData.full_name}</li>
+                            <li><strong>Followers:</strong> ${profileData.followers.toLocaleString()}</li>
+                            <li><strong>Private:</strong> ${profileData.is_private ? 'Yes' : 'No'}</li>
+                        </ul>
+                    </div>
+                `;
+            } else {
+                // For post downloads, just show target URL
+                this.previewContent.innerHTML = `
+                    <div class="preview-content">
+                        <ul>
+                            <li><strong>Type:</strong> Single Post/Reel</li>
+                            <li><strong>URL:</strong> ${target}</li>
+                        </ul>
+                    </div>
+                `;
+            }
+            this.previewSection.style.display = 'block';
+        } catch (error) {
+            console.error('Preview fetch error:', error);
+            this.previewContent.innerHTML = `<p>Unable to generate preview.</p>`;
+            this.previewSection.style.display = 'block';
         }
     }
 }

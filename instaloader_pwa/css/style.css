@@ -176,6 +176,44 @@ main {
     color: #6200ee;
 }
 
+.preview-section {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    border-radius: 8px;
+    background: #f9f9f9;
+    border-left: 4px solid #ff9800;
+}
+
+.preview-section h3 {
+    margin-bottom: 1rem;
+    color: #333;
+}
+
+#previewContent {
+    background: white;
+    padding: 1rem;
+    border-radius: 5px;
+}
+
+.preview-content ul {
+    list-style: none;
+}
+
+.preview-content li {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #eee;
+}
+
+.preview-content li:last-child {
+    border-bottom: none;
+}
+
+.preview-content strong {
+    display: inline-block;
+    width: 100px;
+    color: #ff9800;
+}
+
 @media (max-width: 600px) {
     body {
         padding: 10px;
