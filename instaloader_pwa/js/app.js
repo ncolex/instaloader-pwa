@@ -2,8 +2,6 @@
 class InstaLoaderPWA {
     constructor() {
         this.apiBaseUrl = this.resolveApiBaseUrl();
-        this.jobId = null;
-        this.pollInterval = null;
         this.initializeElements();
         this.bindEvents();
     }
@@ -45,19 +43,6 @@ class InstaLoaderPWA {
         this.profileContent = document.getElementById('profileContent');
         this.previewSection = document.getElementById('previewSection');
         this.previewContent = document.getElementById('previewContent');
-        
-        // Create and add cancel button
-        this.cancelButton = document.createElement('button');
-        this.cancelButton.id = 'cancelDownloadBtn';
-        this.cancelButton.textContent = 'Cancel';
-        this.cancelButton.className = 'btn';
-        this.cancelButton.style.display = 'none';
-        this.cancelButton.style.marginLeft = '10px';
-        this.cancelButton.addEventListener('click', () => this.cancelDownload());
-        
-        // Add the cancel button next to the download buttons
-        const buttonGroup = document.querySelector('.button-group');
-        buttonGroup.appendChild(this.cancelButton);
     }
 
     bindEvents() {
@@ -87,13 +72,13 @@ class InstaLoaderPWA {
             return;
         }
 
-        // Show download preview
         await this.showDownloadPreview(target, downloadType);
 
         this.setButtonsDisabled(true);
         this.statusSection.style.display = 'block';
         this.resultsSection.style.display = 'none';
         this.updateProgress(0);
+        this.updateStatus('Requesting media information...');
 
         try {
             const response = await fetch(`${this.apiBaseUrl}/api/download`, {
@@ -103,63 +88,25 @@ class InstaLoaderPWA {
                 cache: 'no-cache'
             });
 
-            if (!response.ok) throw new Error(`API error: ${response.status}`);
+            if (!response.ok) {
+                const errorPayload = await this.safeParseJson(response);
+                const errorMessage = errorPayload?.detail || `API error: ${response.status}`;
+                throw new Error(errorMessage);
+            }
 
             const data = await response.json();
-            this.jobId = data.job_id; // Store job ID for potential cancellation
-            await this.pollForStatus(this.jobId);
-        } catch (error) {
-            this.updateStatus(`Error: ${error.message}`, 'error');
-            this.setButtonsDisabled(false);
-        }
-    }
-
-    async pollForStatus(jobId) {
-        const maxAttempts = 120; // Increased for longer downloads
-        let attempts = 0;
-
-        this.pollInterval = setInterval(async () => {
-            if (attempts >= maxAttempts) {
-                clearInterval(this.pollInterval);
-                this.pollInterval = null;
-                this.updateStatus('Download timed out', 'error');
-                this.setButtonsDisabled(false);
-                this.jobId = null;
+            const urls = data.media_urls || [];
+            if (!urls.length) {
+                this.updateStatus('No media items were returned for this request.', 'info');
                 return;
             }
 
-            try {
-                const response = await fetch(`${this.apiBaseUrl}/api/status/${jobId}`, { cache: 'no-cache' });
-                if (!response.ok) throw new Error(`Status check failed: ${response.status}`);
-
-                const statusData = await response.json();
-                this.updateStatus(statusData.progress || statusData.status);
-                
-                // Simple progress simulation while polling
-                this.updateProgress((attempts / maxAttempts) * 50); // Poll status takes 50% of progress
-
-                if (statusData.status === 'completed') {
-                    clearInterval(this.pollInterval);
-                    this.pollInterval = null;
-                    this.jobId = null;
-                    await this.handleDownloadComplete(statusData.result);
-                    this.setButtonsDisabled(false);
-                } else if (statusData.status === 'failed') {
-                    clearInterval(this.pollInterval);
-                    this.pollInterval = null;
-                    this.jobId = null;
-                    this.updateStatus(`Download failed: ${statusData.result?.error || 'Unknown error'}`, 'error');
-                    this.setButtonsDisabled(false);
-                }
-            } catch (error) {
-                clearInterval(this.pollInterval);
-                this.pollInterval = null;
-                this.jobId = null;
-                this.updateStatus(`Error checking status: ${error.message}`, 'error');
-                this.setButtonsDisabled(false);
-            }
-            attempts++;
-        }, 2000);
+            await this.downloadAndZipMedia(urls, target);
+        } catch (error) {
+            this.updateStatus(`Error: ${error.message}`, 'error');
+        } finally {
+            this.setButtonsDisabled(false);
+        }
     }
 
     updateStatus(message, type = 'info') {
@@ -175,30 +122,10 @@ class InstaLoaderPWA {
         this.downloadProfileBtn.disabled = disabled;
         this.downloadPostBtn.disabled = disabled;
         this.autoDownloadBtn.disabled = disabled;
-        
-        // Show/hide cancel button based on whether download is active
-        this.cancelButton.style.display = disabled ? 'inline-block' : 'none';
-    }
-    
-    cancelDownload() {
-        if (this.pollInterval) {
-            clearInterval(this.pollInterval);
-            this.pollInterval = null;
-        }
-        
-        this.updateStatus('Download cancelled by user', 'info');
-        this.setButtonsDisabled(false);
-        this.jobId = null;
     }
 
-    async handleDownloadComplete(result) {
-        if (result.error) {
-            this.updateStatus(`Failed: ${result.error}`, 'error');
-            return;
-        }
-
-        const urls = result.media_urls;
-        if (!urls || urls.length === 0) {
+    async downloadAndZipMedia(urls, target) {
+        if (!urls || !urls.length) {
             this.updateStatus('No media found to download.', 'info');
             return;
         }
@@ -210,9 +137,7 @@ class InstaLoaderPWA {
         // Use Promise.all to fetch all files in parallel
         await Promise.all(urls.map(async (url) => {
             try {
-                // Using a self-hosted proxy for fetching from Instagram
-                const proxyUrl = `${this.apiBaseUrl}/api/proxy?url=${encodeURIComponent(url)}`;
-                const response = await fetch(proxyUrl);
+                const response = await fetch(`${this.apiBaseUrl}/api/proxy?url=${encodeURIComponent(url)}`);
                 if (!response.ok) {
                     console.error(`Failed to fetch ${url} via proxy: ${response.statusText}`);
                     return; // Skip this file
@@ -243,12 +168,20 @@ class InstaLoaderPWA {
         this.updateStatus('Download ready!');
         this.resultsSection.style.display = 'block';
         const downloadUrl = URL.createObjectURL(zipBlob);
-        const targetName = this.targetInput.value.trim().replace(/[^a-zA-Z0-9]/g, '_');
-        
+        const sanitizedTarget = (target ? target.replace(/[^a-zA-Z0-9]/g, '_') : 'instaloader') || 'instaloader';
+
         this.resultsContent.innerHTML = `
             <p><strong>${filesDownloaded} files zipped successfully!</strong></p>
-            <a href="${downloadUrl}" class="btn btn-primary" download="${targetName}_instaloader.zip">Download .zip File</a>
+            <a href="${downloadUrl}" class="btn btn-primary" download="${sanitizedTarget}_instaloader.zip">Download .zip File</a>
         `;
+    }
+
+    async safeParseJson(response) {
+        try {
+            return await response.clone().json();
+        } catch (error) {
+            return null;
+        }
     }
 
     async showProfileInfo(username) {

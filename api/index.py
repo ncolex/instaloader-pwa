@@ -1,11 +1,15 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import instaloader
 from instaloader.exceptions import ProfileNotExistsException, LoginRequiredException, PrivateProfileNotFollowedException
 import os
-from typing import Optional, List
+from typing import List
+from urllib.parse import urlparse, unquote
+
+import requests
+from fastapi.responses import StreamingResponse
 
 def get_instaloader_instance():
     """Create an InstaLoader instance and login if credentials are available"""
@@ -65,36 +69,23 @@ app.add_middleware(
     allow_credentials=False,
 )
 
-# Job storage (in production, use Redis or database)
-jobs = {}
-
 class DownloadRequest(BaseModel):
     target: str  # Instagram username or URL
     download_type: str = "auto"  # "profile", "post", or "auto"
 
-class JobStatus(BaseModel):
-    job_id: str
-    status: str  # "pending", "processing", "completed", "failed"
-    progress: Optional[str] = None
-    result: Optional[dict] = None
+class DownloadResponse(BaseModel):
+    status: str
+    message: str
+    media_urls: List[str]
 
 @app.get("/")
 def read_root():
     return {"message": "InstaLoader API", "status": "running"}
 
-@app.post("/api/download")
-def start_download(request: DownloadRequest, background_tasks: BackgroundTasks):
-    # Generate job ID
-    import uuid
-    job_id = str(uuid.uuid4())
-    
-    jobs[job_id] = {
-        "status": "pending",
-        "progress": "Initializing...",
-        "result": None
-    }
-    
-    # Determine if it's a profile or post download
+@app.post("/api/download", response_model=DownloadResponse)
+def start_download(request: DownloadRequest):
+    """Synchronously resolve the requested media and return the URLs."""
+
     if request.download_type == "auto":
         if "instagram.com/p/" in request.target or "instagram.com/reel/" in request.target:
             download_type = "post"
@@ -102,38 +93,34 @@ def start_download(request: DownloadRequest, background_tasks: BackgroundTasks):
             download_type = "profile"
     else:
         download_type = request.download_type
-    
-    # Add background task
-    background_tasks.add_task(process_media_request, job_id, request.target, download_type)
-    
-    return {"job_id": job_id, "message": "Request received. Processing..."}
 
-def process_media_request(job_id: str, target: str, download_type: str):
-    jobs[job_id]["status"] = "processing"
-    jobs[job_id]["progress"] = f"Fetching media URLs for {target}"
-    
     try:
-        media_urls = []
         if download_type == "profile":
-            media_urls = get_profile_media_urls(target)
+            media_urls = get_profile_media_urls(request.target)
         elif download_type == "post":
-            media_urls = get_post_media_urls(target)
-        
-        jobs[job_id]["status"] = "completed"
-        jobs[job_id]["progress"] = f"Found {len(media_urls)} media items."
-        jobs[job_id]["result"] = {
-            "media_urls": media_urls,
-            "message": "Media URLs fetched successfully."
-        }
-        
-    except (ProfileNotExistsException, LoginRequiredException, PrivateProfileNotFollowedException) as e:
-        jobs[job_id]["status"] = "failed"
-        jobs[job_id]["progress"] = f"Error: {str(e)}"
-        jobs[job_id]["result"] = {"error": str(e)}
-    except Exception as e:
-        jobs[job_id]["status"] = "failed"
-        jobs[job_id]["progress"] = f"An unexpected error occurred: {str(e)}"
-        jobs[job_id]["result"] = {"error": str(e)}
+            media_urls = get_post_media_urls(request.target)
+        else:
+            raise HTTPException(status_code=400, detail="Invalid download type")
+
+        if not media_urls:
+            raise HTTPException(status_code=404, detail="No media found for the requested target")
+
+        return DownloadResponse(
+            status="completed",
+            message=f"Found {len(media_urls)} media items.",
+            media_urls=media_urls,
+        )
+
+    except ProfileNotExistsException as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except LoginRequiredException as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+    except PrivateProfileNotFollowedException as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {exc}")
 
 def get_profile_media_urls(username: str) -> List[str]:
     """Get all media URLs from an Instagram profile"""
@@ -184,37 +171,6 @@ def get_post_media_urls(url: str) -> List[str]:
         print(f"Error fetching post media for {url}: {e}")
         raise e
 
-@app.get("/api/status/{job_id}")
-def get_job_status(job_id: str):
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-    return JobStatus(
-        job_id=job_id,
-        status=jobs[job_id]["status"],
-        progress=jobs[job_id]["progress"],
-        result=jobs[job_id]["result"]
-    )
-
-@app.get("/api/proxy")
-async def proxy(url: str):
-    """Proxy for fetching media from Instagram servers to avoid CORS issues"""
-    if not re.match(r"^https?://", url):
-        raise HTTPException(status_code=400, detail="Invalid URL format")
-
-    try:
-        response = requests.get(url, stream=True)
-        response.raise_for_status()  # Raise an exception for bad status codes
-
-        return StreamingResponse(
-            response.iter_content(chunk_size=8192),
-            media_type=response.headers.get("Content-Type")
-        )
-    except requests.exceptions.RequestException as e:
-        print(f"Proxy request failed for {url}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch content from URL: {e}")
-
-import requests
 import re
 import json
 
@@ -296,3 +252,56 @@ def get_profile_info(username: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+@app.get("/api/proxy")
+def proxy_instagram_media(url: str):
+    """Stream Instagram media through the API to avoid CORS issues in the browser."""
+
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing url parameter")
+
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(status_code=400, detail="Invalid URL scheme")
+
+    hostname = parsed.hostname or ""
+    allowed_prefixes = ("scontent-", "instagram", "cdninstagram")
+    if not any(hostname.startswith(prefix) for prefix in allowed_prefixes):
+        raise HTTPException(status_code=400, detail="URL host is not allowed")
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+        "Referer": "https://www.instagram.com/",
+    }
+
+    try:
+        upstream = requests.get(url, headers=headers, stream=True, timeout=30)
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to reach upstream: {exc}")
+
+    if upstream.status_code != 200:
+        upstream.close()
+        raise HTTPException(status_code=upstream.status_code, detail="Upstream responded with an error")
+
+    content_type = upstream.headers.get("content-type", "application/octet-stream")
+    filename = unquote(parsed.path.rsplit("/", 1)[-1]) or "media"
+
+    def iter_stream():
+        try:
+            for chunk in upstream.iter_content(chunk_size=8192):
+                if chunk:
+                    yield chunk
+        finally:
+            upstream.close()
+
+    return StreamingResponse(
+        iter_stream(),
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f"inline; filename=\"{filename}\"",
+            "Cache-Control": "public, max-age=300",
+        },
+    )
