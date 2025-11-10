@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import instaloader
 from instaloader.exceptions import ProfileNotExistsException, LoginRequiredException, PrivateProfileNotFollowedException
@@ -194,6 +195,24 @@ def get_job_status(job_id: str):
         progress=jobs[job_id]["progress"],
         result=jobs[job_id]["result"]
     )
+
+@app.get("/api/proxy")
+async def proxy(url: str):
+    """Proxy for fetching media from Instagram servers to avoid CORS issues"""
+    if not re.match(r"^https?://", url):
+        raise HTTPException(status_code=400, detail="Invalid URL format")
+
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()  # Raise an exception for bad status codes
+
+        return StreamingResponse(
+            response.iter_content(chunk_size=8192),
+            media_type=response.headers.get("Content-Type")
+        )
+    except requests.exceptions.RequestException as e:
+        print(f"Proxy request failed for {url}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch content from URL: {e}")
 
 import requests
 import re
