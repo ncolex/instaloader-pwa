@@ -139,7 +139,7 @@ class InstaLoaderPWA {
             try {
                 const response = await fetch(`${this.apiBaseUrl}/api/proxy?url=${encodeURIComponent(url)}`);
                 if (!response.ok) {
-                    console.error(`Failed to fetch ${url}: ${response.statusText}`);
+                    console.error(`Failed to fetch ${url} via proxy: ${response.statusText}`);
                     return; // Skip this file
                 }
                 const blob = await response.blob();
