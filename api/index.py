@@ -1,10 +1,10 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import instaloader
 from instaloader.exceptions import ProfileNotExistsException, LoginRequiredException, PrivateProfileNotFollowedException
 import os
 from typing import Optional, List
-from pathlib import Path
 
 def get_instaloader_instance():
     """Create an InstaLoader instance and login if credentials are available"""
@@ -45,6 +45,23 @@ app = FastAPI(
     title="InstaLoader API",
     description="Instagram media downloader API",
     version="1.0.0"
+)
+
+# Configure CORS to allow the PWA to call the API from other origins
+raw_origins = os.environ.get("CORS_ALLOW_ORIGINS", "*")
+if raw_origins.strip() == "*":
+    allowed_origins = ["*"]
+else:
+    allowed_origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    if not allowed_origins:
+        allowed_origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=False,
 )
 
 # Job storage (in production, use Redis or database)
