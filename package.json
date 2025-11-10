@@ -1,0 +1,29 @@
+{
+  "name": "instaloader-pwa",
+  "version": "1.0.0",
+  "description": "A Progressive Web App for downloading Instagram media",
+  "main": "api/index.py",
+  "scripts": {
+    "start": "python -m uvicorn api.index:app --host 0.0.0.0 --port $PORT",
+    "dev": "python -m uvicorn api.index:app --reload --host 0.0.0.0 --port 8000",
+    "pwa": "python serve_pwa.py 8080",
+    "setup": "pip install -r requirements.txt"
+  },
+  "keywords": [
+    "instagram",
+    "downloader",
+    "pwa",
+    "media",
+    "social-media"
+  ],
+  "author": "Nicobattaglia",
+  "license": "MIT",
+  "dependencies": {
+    "fastapi": "^0.104.1",
+    "uvicorn": "^0.24.0",
+    "instaloader": "^4.9.5",
+    "pydantic": "^2.5.0",
+    "python-multipart": "^0.0.6",
+    "requests": "^2.31.0"
+  }
+}

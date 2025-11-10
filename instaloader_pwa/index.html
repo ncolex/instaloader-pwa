@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InstaLoader PWA</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/x-icon" href="images/icon.png">
+    <meta name="theme-color" content="#6200ee">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>InstaLoader PWA</h1>
+            <p>Download Instagram media with ease</p>
+        </header>
+        
+        <main>
+            <div class="input-section">
+                <label for="targetInput">Enter Instagram Username or Post URL:</label>
+                <input type="text" id="targetInput" placeholder="e.g., username or https://www.instagram.com/p/...">
+                
+                <div class="button-group">
+                    <button id="downloadProfileBtn" class="btn">Download Profile</button>
+                    <button id="downloadPostBtn" class="btn">Download Post</button>
+                    <button id="autoDownloadBtn" class="btn btn-primary">Auto Download</button>
+                </div>
+            </div>
+            
+            <div class="status-section" id="statusSection" style="display: none;">
+                <h3>Download Status</h3>
+                <div id="statusText">Initializing...</div>
+                <div id="progressBar" class="progress-bar">
+                    <div id="progress" class="progress"></div>
+                </div>
+            </div>
+            
+            <div class="results-section" id="resultsSection" style="display: none;">
+                <h3>Download Results</h3>
+                <div id="resultsContent"></div>
+            </div>
+            
+            <div class="profile-info" id="profileInfo" style="display: none;">
+                <h3>Profile Information</h3>
+                <div id="profileContent"></div>
+            </div>
+        </main>
+    </div>
+    
+    <script src="js/unregister-sw.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="js/app.js"></script>
+    <!-- Removed service worker registration to avoid API conflicts -->
+    <!-- <script src="js/service-worker-register.js"></script> -->
+    
+    <script>
+        // Double check to unregister any existing service workers
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                for(let registration of registrations) {
+                    registration.unregister();
+                }
+            });
+        }
+    </script>
+</body>
+</html>
