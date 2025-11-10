@@ -6,6 +6,9 @@
   ],
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/index.py" },
+    { "src": "/css/(.*)", "dest": "/instaloader_pwa/css/$1" },
+    { "src": "/js/(.*)", "dest": "/instaloader_pwa/js/$1" },
+    { "src": "/images/(.*)", "dest": "/instaloader_pwa/images/$1" },
     { "src": "/(.*)", "dest": "/instaloader_pwa/$1" }
   ]
 }
