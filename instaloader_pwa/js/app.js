@@ -210,10 +210,11 @@ class InstaLoaderPWA {
         // Use Promise.all to fetch all files in parallel
         await Promise.all(urls.map(async (url) => {
             try {
-                // Using a CORS proxy for fetching from Instagram
-                const response = await fetch(`https://cors-anywhere.herokuapp.com/${url}`);
+                // Using a self-hosted proxy for fetching from Instagram
+                const proxyUrl = `${this.apiBaseUrl}/api/proxy?url=${encodeURIComponent(url)}`;
+                const response = await fetch(proxyUrl);
                 if (!response.ok) {
-                    console.error(`Failed to fetch ${url}: ${response.statusText}`);
+                    console.error(`Failed to fetch ${url} via proxy: ${response.statusText}`);
                     return; // Skip this file
                 }
                 const blob = await response.blob();

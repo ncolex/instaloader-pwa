@@ -48,6 +48,16 @@ main {
     margin-bottom: 2rem;
 }
 
+.credentials-notice {
+    background-color: #fff3cd;
+    color: #856404;
+    padding: 1rem;
+    border: 1px solid #ffeeba;
+    border-radius: 5px;
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
 .input-section label {
     display: block;
     margin-bottom: 0.5rem;
