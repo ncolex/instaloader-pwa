@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InstaLoader Web App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #405DE6;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        h2 {
+            color: #333;
+            margin-top: 0;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="password"], input[type="email"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #405DE6;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #314DD6;
+        }
+        .flash-messages {
+            margin-bottom: 20px;
+        }
+        .flash-message {
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .instructions {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            border-left: 4px solid #405DE6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>InstaLoader Web App</h1>
+        
+        <div class="flash-messages">
+            {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="flash-message">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+        
+        <div class="form-section">
+            <h2>Create Instagram Session</h2>
+            <form action="/create_session" method="post">
+                <label for="username">Instagram Username:</label>
+                <input type="text" id="username" name="username" required>
+                
+                <label for="password">Instagram Password:</label>
+                <input type="password" id="password" name="password" required>
+                
+                <button type="submit">Create Session</button>
+            </form>
+            
+            <div class="instructions">
+                <p><strong>Instructions:</strong> Enter your Instagram username and password to create a session file. This allows you to download content without re-entering credentials. Session files will be automatically deleted after 1 hour for security. After creating a session, you will see the file name and location in the status messages above.</p>
+                <p><strong>Important:</strong> Instagram has updated their login process. If direct login doesn't work, you may need to create a session file manually using the instaloader command line tool first. See README for instructions.</p>
+            </div>
+        </div>
+        
+        <div class="form-section">
+            <h2>Download Profile</h2>
+            <form action="/download_profile" method="post">
+                <label for="target_username">Target Username:</label>
+                <input type="text" id="target_username" name="target_username" value="alvelalucas" required>
+                
+                <label for="session_file">Session File:</label>
+                <input type="text" id="session_file" name="session_file" placeholder="Enter the session filename (e.g., session_randomhash.session)" required>
+                
+                <label for="login_username">Login Username:</label>
+                <input type="text" id="login_username" name="login_username" required>
+                
+                <div style="margin: 15px 0;">
+                    <label style="display: flex; align-items: center;">
+                        <input type="checkbox" id="send_email" name="send_email" style="margin-right: 8px;">
+                        Send downloads via email
+                    </label>
+                </div>
+                
+                <div id="email_section" style="display: none;">
+                    <label for="email_address">Email Address:</label>
+                    <input type="email" id="email_address" name="email_address" placeholder="your.email@example.com" style="margin-bottom: 15px;">
+                </div>
+                
+                <button type="submit">Download Profile</button>
+            </form>
+            
+            <div id="status-area" style="margin-top: 15px; padding: 10px; background-color: #f8f9fa; border-radius: 4px; display: none;">
+                <h3>Download Status:</h3>
+                <p id="status-text">No active download</p>
+            </div>
+            
+            <div class="instructions">
+                <p><strong>Instructions:</strong> Enter the target Instagram username you want to download, the session file created in the first step, and the username associated with the session. Optionally, check "Send downloads via email" to have files sent to your email.</p>
+                <p><strong>Session Note:</strong> If you're having login issues, copy your existing session file to the app directory and enter its filename here.</p>
+            </div>
+        </div>
+        
+        <div class="form-section">
+            <h2>API Integration (Future)</h2>
+            <p>This section will be used for API integration with other PWA applications in the future.</p>
+            <p>Currently under development. In the future, you will be able to connect this application with other services.</p>
+        </div>
+    </div>
+    
+    <script>
+        // Function to check download status
+        function checkStatus(targetUsername) {
+            if (!targetUsername) return;
+            
+            fetch(`/status/${targetUsername}`)
+                .then(response => response.json())
+                .then(data => {
+                    const statusText = document.getElementById('status-text');
+                    if (statusText) {
+                        statusText.textContent = data.status;
+                        
+                        // Show the status area if it's hidden
+                        const statusArea = document.getElementById('status-area');
+                        if (statusArea.style.display === 'none') {
+                            statusArea.style.display = 'block';
+                        }
+                        
+                        // Continue checking if download is still in progress
+                        if (data.status.includes("Downloaded") && !data.status.includes("completed successfully!")) {
+                            setTimeout(() => checkStatus(targetUsername), 2000);
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching status:', error);
+                });
+        }
+        
+        // Add event listener to show/hide email section
+        document.addEventListener('DOMContentLoaded', function() {
+            const sendEmailCheckbox = document.getElementById('send_email');
+            const emailSection = document.getElementById('email_section');
+            
+            sendEmailCheckbox.addEventListener('change', function() {
+                if (this.checked) {
+                    emailSection.style.display = 'block';
+                } else {
+                    emailSection.style.display = 'none';
+                }
+            });
+            
+            const downloadForm = document.querySelector('form[action="/download_profile"]');
+            if (downloadForm) {
+                downloadForm.addEventListener('submit', function(e) {
+                    const targetUsername = document.getElementById('target_username').value;
+                    if (targetUsername) {
+                        setTimeout(() => checkStatus(targetUsername), 1000);  // Start checking after a short delay
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
